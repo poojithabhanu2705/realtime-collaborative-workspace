@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4A4466;
+  --color-primary-dark: #3B3654;
+  --color-secondary: #6EADBC;
+  --color-accent: #9FCBAD;
+  --color-background: #F1F7D4;
+
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+
+  --shadow-premium: 0 10px 40px -10px rgba(74, 68, 102, 0.15);
+  --shadow-elevated: 0 20px 60px -12px rgba(74, 68, 102, 0.25);
+
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-secondary) 20%, transparent);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+}
+
+@utility glass-card {
+  background-color: color-mix(in srgb, white 40%, transparent);
+  backdrop-filter: blur(24px);
+  border: 1px solid color-mix(in srgb, white 20%, transparent);
+  box-shadow: var(--shadow-premium);
+}
+
+@utility interactive-button {
+  transition: all 200ms;
+  &:active {
+    transform: scale(0.95);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@utility custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    border-radius: 9999px;
+  }
+}
+
+@utility animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
