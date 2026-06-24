@@ -41,7 +41,10 @@ exports.signup = async (req, res) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite:
+        process.env.NODE_ENV === "production"
+          ? "none"
+          : "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -51,9 +54,9 @@ exports.signup = async (req, res) => {
     });
   } catch (error) {
     console.error("[AUTH] Signup Error:", error);
-    res.status(500).json({ 
-      message: "An internal server error occurred during signup", 
-      error: process.env.NODE_ENV === "development" ? error.message : undefined 
+    res.status(500).json({
+      message: "An internal server error occurred during signup",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
     });
   }
 };
