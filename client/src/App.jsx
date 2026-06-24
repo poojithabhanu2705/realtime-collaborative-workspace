@@ -18,6 +18,7 @@ function App() {
           
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Home />} />
             <Route path="/document/:id" element={<Document />} />
             <Route path="/join" element={<JoinPage />} />
           </Route>

@@ -19,6 +19,7 @@ import {
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Card from "../components/ui/Card";
+import Modal from "../components/ui/Modal";
 import Navbar from "../components/layout/Navbar";
 import api from "../services/api";
 
@@ -31,6 +32,7 @@ export default function Home() {
   const [newTitle, setNewTitle] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const navigate = useNavigate();
 
   // Fetch documents on mount
@@ -57,7 +59,13 @@ export default function Home() {
   const joinDocument = (e) => {
     e.preventDefault();
     if (!docId.trim()) return;
-    navigate(`/document/${docId}`);
+
+    // Check if it's a full URL and extract the ID
+    const urlPattern = /\/document\/([a-zA-Z0-9_-]+)/;
+    const match = docId.match(urlPattern);
+    const finalId = match ? match[1] : docId.trim();
+
+    navigate(`/document/${finalId}`);
   };
 
   const createNew = async () => {
@@ -163,7 +171,7 @@ export default function Home() {
                 <Input
                   value={docId}
                   onChange={(e) => setDocId(e.target.value)}
-                  placeholder="Enter document ID to join..."
+                  placeholder="Paste shared document link or document ID"
                   className="bg-transparent border-none focus:ring-0 text-base py-4"
                 />
                 <Button type="submit" className="gap-2 shrink-0">
@@ -172,20 +180,60 @@ export default function Home() {
               </form>
             </Card>
 
-            <div className="mt-6 flex items-center justify-center gap-4">
-              <span className="text-sm text-primary/40 font-medium">Or</span>
-              <button
-                onClick={createNew}
-                disabled={creating}
-                className="text-sm font-bold text-primary hover:text-secondary transition-colors underline decoration-2 underline-offset-4 inline-flex items-center gap-1.5"
-              >
-                <Plus size={14} />
-                {creating ? "Creating..." : "Create a new document"}
-              </button>
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <span className="text-sm text-primary/40 font-medium">Or</span>
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="text-sm font-bold text-primary hover:text-secondary transition-colors underline decoration-2 underline-offset-4 inline-flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Create a new document
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        </main>
+
+        {/* Create Document Modal */}
+        <Modal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          title="Create Document"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createNew();
+            }}
+            className="space-y-6"
+          >
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-widest text-primary/40">
+                Document Title
+              </label>
+              <Input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="e.g. System Design Notes"
+                autoFocus
+                required
+              />
             </div>
-          </motion.div>
-        </div>
-      </main>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setIsCreateModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1" disabled={creating}>
+                {creating ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
 
       {/* Documents Dashboard */}
       <section className="py-16 bg-primary/[0.02] border-y border-primary/5">

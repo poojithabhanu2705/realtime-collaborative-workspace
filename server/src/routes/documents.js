@@ -29,12 +29,14 @@ router.post(
   async (req, res) => {
     try {
       const documentId = crypto.randomBytes(12).toString("hex");
+      console.log("[DOC_CREATE] Payload:", { creator: req.user.id, title: req.body.title });
       const doc = await Document.create({
         documentId,
         title: req.body.title || "Untitled Document",
         content: "",
         owner: req.user.id,
       });
+      console.log("[DOC_CREATE] Success:", { docId: doc.documentId, owner: doc.owner });
 
       // Create initial version
       await Version.create({

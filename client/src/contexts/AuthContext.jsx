@@ -9,21 +9,34 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const checkAuth = async () => {
+      // 1. Peer into localStorage for immediate (optimistic) user state
+      const savedUser = localStorage.getItem("user");
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (e) {
+          console.error("Failed to parse saved user", e);
+        }
+      }
+
       const token = localStorage.getItem("accessToken");
       if (token) {
         try {
-          // You might have a /me endpoint, but for now we'll just try to refresh
+          // 2. Validate session with the backend
           const { data } = await api.post("/auth/refresh");
           localStorage.setItem("accessToken", data.accessToken);
-          // For simplicity, we assume the refresh token gives us the user via Axios interceptor if we had a /me
-          // Let's just set a dummy user if it succeeds, or better, include user in refresh response
-          // I updated the backend authController to NOT return user in refresh, let's fix it later if needed.
-          // For now, let's just use localStorage for user data too.
-          const savedUser = JSON.parse(localStorage.getItem("user"));
-          setUser(savedUser);
+          if (data.user) {
+            localStorage.setItem("user", JSON.stringify(data.user));
+            setUser(data.user);
+          }
         } catch (err) {
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("user");
+          console.warn("Refresh failed, session may be expired", err);
+          // Only clear if we actually fail the refresh and have no valid token
+          if (err.response?.status === 401 || err.response?.status === 403) {
+            localStorage.removeItem("accessToken");
+            localStorage.removeItem("user");
+            setUser(null);
+          }
         }
       }
       setLoading(false);

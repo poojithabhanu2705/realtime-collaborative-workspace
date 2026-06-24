@@ -20,6 +20,7 @@ import ShareModal from "../components/ShareModal";
 import Navbar from "../components/layout/Navbar";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
+import { Shield } from "lucide-react";
 
 export default function Document() {
   const { id } = useParams();
@@ -35,39 +36,89 @@ export default function Document() {
   const [typingUsers, setTypingUsers] = useState([]);
   const [cursors, setCursors] = useState({});
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [versionsLoading, setVersionsLoading] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState([]);
-  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const typingTimeoutRef = useRef(null);
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
 
   // =========================
-  // SOCKET CONNECTION
+  // INITIAL LOAD & SOCKET
   // =========================
   useEffect(() => {
+    const fetchDoc = async () => {
+      try {
+        const { data } = await api.get(`/documents/${id}`);
+        setTitle(data.title || "Untitled Document");
+        setOwnerId(data.owner._id || data.owner);
+        // Find current user's role
+        if (data.owner._id === user?.id || data.owner === user?.id) {
+          setRole("owner");
+        } else {
+          const collab = data.collaborators?.find(c => (c.user._id || c.user) === user?.id);
+          setRole(collab?.role || "viewer");
+        }
+        setLoading(false);
+      } catch (err) {
+        console.error("Failed to fetch doc via REST:", err);
+        // If REST fails, we still try socket, but maybe the doc doesn't exist
+        if (err.response?.status === 404) {
+          setError("Document not found.");
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchDoc();
+
     socket.auth.token = localStorage.getItem("accessToken");
     if (!socket.connected) socket.connect();
 
-    const onConnect = () => setIsConnected(true);
-    const onDisconnect = () => setIsConnected(false);
+    const onConnect = () => {
+      console.log("Connected", socket.id);
+      setIsConnected(true);
+    };
+    const onDisconnect = () => {
+      console.log("Disconnected");
+      setIsConnected(false);
+    };
+    const onConnectError = (err) => {
+      console.log("Connect Error:", err);
+    };
 
     // Re-join document on reconnection
     const onReconnect = () => {
+      console.log("Reconnecting to document:", id);
       socket.emit("join-document", id);
     };
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
     socket.io.on("reconnect", onReconnect);
 
     // Load document
-    socket.on("load-document", ({ content, title: docTitle, role: docRole, ownerId: owner }) => {
-      setText(content);
-      setTitle(docTitle || id);
-      setRole(docRole);
-      setOwnerId(owner);
+    socket.on("load-document", (data) => {
+      try {
+        console.log("[SOCKET] load-document data:", data);
+        const { content, title: docTitle, role: docRole, ownerId: owner } = data;
+        console.log("[SOCKET] Setting role to:", docRole);
+
+        setText(content || "");
+        setTitle(docTitle || "Untitled Document");
+        setRole(docRole || "viewer");
+        setOwnerId(owner);
+        setLoading(false);
+        setError(null);
+      } catch (err) {
+        console.error("Error processing load-document:", err);
+        setError("Failed to initialize document data.");
+        setLoading(false);
+      }
     });
 
     // Receive changes from others
@@ -110,9 +161,20 @@ export default function Document() {
     // Join the document room
     socket.emit("join-document", id);
 
+    // Timeout fallback for loading
+    const loadTimeout = setTimeout(() => {
+      if (loading) {
+        console.error("Document load timed out");
+        setError("Connection timeout. Please check your internet or try again.");
+        setLoading(false);
+      }
+    }, 10000);
+
     return () => {
+      clearTimeout(loadTimeout);
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
       socket.io.off("reconnect", onReconnect);
       socket.off("load-document");
       socket.off("receive-changes");
@@ -122,7 +184,7 @@ export default function Document() {
       socket.off("cursor-update");
       socket.off("title-updated");
     };
-  }, [id, user]);
+  }, [id, user, loading]);
 
   // =========================
   // TEXT CHANGE HANDLER
@@ -226,6 +288,37 @@ export default function Document() {
 
   const isOwner = user?.id === ownerId;
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-primary/[0.02]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+        <p className="text-sm font-bold text-primary/40 uppercase tracking-widest">Loading Document...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-6">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 bg-red-100 text-red-500 rounded-2xl flex items-center justify-center mx-auto">
+            <X size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-primary">Unable to load document</h2>
+            <p className="text-primary/60">{error}</p>
+          </div>
+          <Button onClick={() => window.location.reload()} className="w-full">
+            Try Again
+          </Button>
+          <Link to="/dashboard" className="block text-sm font-bold text-primary/40 hover:text-primary transition-colors">
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -248,17 +341,17 @@ export default function Document() {
           <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-8 border-b border-primary/5">
             <div className="space-y-4">
               <Link
-                to="/"
+                to="/dashboard"
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-primary/40 hover:text-primary transition-colors uppercase tracking-widest"
               >
-                <ChevronLeft size={14} /> Back to dashboard
+                <ChevronLeft size={14} /> Back to Dashboard
               </Link>
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center text-primary">
                   <FileText size={24} />
                 </div>
                 <div>
-                  {role === "editor" ? (
+                  {(role === "editor" || role === "owner") ? (
                     <input
                       type="text"
                       value={title}
@@ -269,11 +362,11 @@ export default function Document() {
                     />
                   ) : (
                     <h1 className="text-3xl font-extrabold tracking-tight text-primary">
-                      {title || id}
+                      {title || "Untitled Document"}
                     </h1>
                   )}
                   <div className="flex gap-2 mt-1 items-center">
-                    <Badge 
+                    <Badge
                       variant={role === "owner" ? "secondary" : role === "editor" ? "success" : "default"}
                     >
                       {role.toUpperCase()}
@@ -331,8 +424,8 @@ export default function Document() {
                 </Button>
               )}
 
-              {isOwner && (
-                <Button onClick={() => setIsShareModalOpen(true)} className="gap-2">
+              {role === "owner" && (
+                <Button onClick={() => setIsShareModalOpen(true)} className="gap-2 bg-accent hover:bg-accent/90">
                   <Share2 size={18} /> Share
                 </Button>
               )}
@@ -413,32 +506,42 @@ export default function Document() {
                     ) : versions.length === 0 ? (
                       <p className="text-sm text-primary/30 text-center py-8">No versions yet</p>
                     ) : (
-                      <div className="space-y-3">
-                        {versions.map((v) => (
-                          <div
-                            key={v._id}
-                            className="p-3 rounded-xl bg-primary/[0.02] border border-primary/5 hover:border-primary/10 transition-colors"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-bold text-primary">
-                                v{v.versionNumber}
-                              </span>
-                              {(role === "editor" || role === "owner") && (
-                                <button
-                                  onClick={() => restoreVersion(v._id)}
-                                  className="text-xs font-bold text-secondary hover:underline flex items-center gap-1"
-                                >
-                                  <RotateCcw size={12} /> Restore
-                                </button>
-                              )}
+                      <>
+                        <div className="space-y-3 mb-6">
+                          {versions.map((v) => (
+                            <div
+                              key={v._id}
+                              className="p-3 rounded-xl bg-primary/[0.02] border border-primary/5 hover:border-primary/10 transition-colors"
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-primary">
+                                  v{v.versionNumber}
+                                </span>
+                                {(role === "editor" || role === "owner") && (
+                                  <button
+                                    onClick={() => restoreVersion(v._id)}
+                                    className="text-xs font-bold text-secondary hover:underline flex items-center gap-1"
+                                  >
+                                    <RotateCcw size={12} /> Restore
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-primary/40 font-medium">
+                                {v.createdBy?.username || "Unknown"} •{" "}
+                                {new Date(v.createdAt).toLocaleString()}
+                              </p>
                             </div>
-                            <p className="text-[10px] text-primary/40 font-medium">
-                              {v.createdBy?.username || "Unknown"} •{" "}
-                              {new Date(v.createdAt).toLocaleString()}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          className="w-full text-xs"
+                          onClick={() => setShowVersions(false)}
+                        >
+                          ← Back to Document
+                        </Button>
+                      </>
                     )}
                   </div>
                 </motion.div>

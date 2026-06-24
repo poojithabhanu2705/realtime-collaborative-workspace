@@ -66,7 +66,7 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Share Document">
+    <Modal isOpen={isOpen} onClose={onClose} title="Manage Access">
       <div className="space-y-8">
         {/* Invite Form */}
         <form onSubmit={handleShare} className="space-y-4">
@@ -126,6 +126,7 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
                       >
                         <option value="viewer">Viewer</option>
                         <option value="editor">Editor</option>
+                        <option value="owner">Promote to Owner</option>
                       </select>
                       <button
                         onClick={() => removePermission(collab.user._id)}
@@ -142,21 +143,39 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
           </div>
         </div>
 
-        {/* Copy Link */}
-        <div className="pt-6 border-t border-primary/5">
-          <button
-            onClick={copyLink}
-            className="flex items-center justify-between w-full px-4 py-3 bg-primary/5 rounded-2xl text-xs font-bold text-primary group transition-all active:scale-95"
-          >
-            <span className="flex items-center gap-2">
-              <Share2 size={14} className="text-primary/40" /> Copy share link
-            </span>
-            {copied ? (
-              <Check size={14} className="text-accent" />
-            ) : (
-              <Copy size={14} className="text-primary/40 group-hover:text-primary" />
-            )}
-          </button>
+        {/* Copy Link Section */}
+        <div className="pt-6 border-t border-primary/5 space-y-3">
+          <label className="text-xs font-bold uppercase tracking-widest text-primary/40">
+            Shareable document link
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 px-4 py-3 bg-primary/5 rounded-2xl text-[13px] font-medium text-primary/70 truncate border border-primary/10 select-all">
+              {window.location.origin}/document/{documentId}
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/document/${documentId}`);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className={`px-4 rounded-2xl flex items-center justify-center transition-all active:scale-95 border ${copied ? 'bg-accent/10 border-accent/20 text-accent' : 'bg-primary text-white border-transparent hover:bg-primary/90'}`}
+              title="Copy to clipboard"
+            >
+              {copied ? <Check size={18} /> : <Copy size={18} />}
+            </button>
+          </div>
+          {copied && (
+            <p className="text-[10px] font-bold text-accent uppercase tracking-widest animate-pulse">
+              Link copied to clipboard!
+            </p>
+          )}
+        </div>
+
+        {/* Back/Cancel Button */}
+        <div className="pt-2">
+          <Button variant="outline" className="w-full" onClick={onClose}>
+            ← Back to Document
+          </Button>
         </div>
       </div>
     </Modal>

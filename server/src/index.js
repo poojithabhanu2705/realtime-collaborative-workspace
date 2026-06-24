@@ -353,6 +353,13 @@ io.on("connection", (socket) => {
       }
 
       const role = isOwner ? "owner" : (collaborator ? collaborator.role : "viewer");
+      console.log("[DOC_LOAD] Role assigned:", {
+        docId: documentId,
+        currentUser: socket.user.id,
+        ownerId: document.owner.toString(),
+        isOwner,
+        assignedRole: role
+      });
       socket.role = role;
       socket.documentId = documentId;
 
@@ -376,13 +383,15 @@ io.on("connection", (socket) => {
       startAutosave(documentId);
 
       // Send document to client
-      socket.emit("load-document", {
+      const loadData = {
         content: document.content,
-        title: document.title,
+        title: document.title || "Untitled Document",
         role: role,
         ownerId: document.owner,
         currentVersion: document.currentVersion,
-      });
+      };
+      console.log(`[SOCKET] Emitting load-document for ${documentId}:`, loadData);
+      socket.emit("load-document", loadData);
 
       if (typeof callback === "function") callback({ success: true, role });
 
