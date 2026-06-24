@@ -66,8 +66,8 @@ const rateLimitHandler = (req, res, next, options) => {
 };
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: isDev ? 5000 : 20, 
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 5000 : 20,
   message: { message: "Too many signup/login attempts. Please try again later." },
   handler: rateLimitHandler,
   standardHeaders: true,
@@ -75,8 +75,8 @@ const authLimiter = rateLimit({
 });
 
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, 
-  max: isDev ? 10000 : 100, 
+  windowMs: 60 * 1000,
+  max: isDev ? 10000 : 100,
   message: { message: "Too many requests. Please try again later." },
   handler: rateLimitHandler,
   standardHeaders: true,
@@ -593,5 +593,7 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+console.log("CLIENT_URL:", CLIENT_URL);
 
 startServer();
