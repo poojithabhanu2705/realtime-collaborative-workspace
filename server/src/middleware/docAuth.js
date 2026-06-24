@@ -16,20 +16,25 @@ const checkDocAccess = (requiredRole) => {
         (c) => c.user.toString() === userId
       );
 
-      const userRole = isOwner ? "owner" : collaborator?.role;
+      let userRole = null;
+      if (isOwner) {
+        userRole = "owner";
+      } else if (collaborator) {
+        userRole = collaborator.role;
+      }
 
       if (!userRole) {
         return res.status(403).json({ message: "No access to this document" });
       }
 
-      // Permission check logic
+      // Permission check logic (Owner > Editor > Viewer)
       const roles = ["viewer", "editor", "owner"];
       const userLevel = roles.indexOf(userRole);
       const requiredLevel = roles.indexOf(requiredRole);
 
       if (userLevel < requiredLevel) {
         return res.status(403).json({
-          message: `Required role: ${requiredRole}. Your role: ${userRole}`,
+          message: `Required role: ${requiredRole}. Your current role: ${userRole}`,
         });
       }
 

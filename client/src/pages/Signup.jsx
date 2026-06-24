@@ -22,7 +22,15 @@ export default function Signup() {
       await signup(username, email, password);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.message || "Signup failed");
+      const data = err.response?.data;
+      if (data?.errors && Array.isArray(data.errors)) {
+        // Handle validation errors array
+        const messages = data.errors.map(e => e.message).join(". ");
+        setError(messages);
+      } else {
+        // Handle single message or generic error
+        setError(data?.message || "Unable to sign up. Please check your connection.");
+      }
     } finally {
       setIsLoading(false);
     }

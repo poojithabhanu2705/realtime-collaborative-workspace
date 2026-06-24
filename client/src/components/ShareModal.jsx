@@ -19,7 +19,7 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
 
   const fetchCollaborators = async () => {
     try {
-      const { data } = await api.get(`/documents/${documentId}/permissions`);
+      const { data } = await api.get(`/documents/${documentId}/collaborators`);
       setCollaborators(data);
     } catch (err) {
       console.error("Failed to fetch collaborators");
@@ -30,7 +30,7 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await api.post(`/documents/${documentId}/share`, { email, role });
+      await api.post(`/documents/${documentId}/invite`, { email, role });
       setEmail("");
       fetchCollaborators();
     } catch (err) {
@@ -40,12 +40,22 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
     }
   };
 
-  const removePermission = async (userId) => {
+  const updatePermission = async (userId, newRole) => {
     try {
-      await api.delete(`/documents/${documentId}/permissions/${userId}`);
+      await api.patch(`/documents/${documentId}/permissions`, { userId, role: newRole });
       fetchCollaborators();
     } catch (err) {
-      alert("Failed to remove user");
+      alert(err.response?.data?.message || "Failed to update permissions");
+    }
+  };
+
+  const removePermission = async (userId) => {
+    if (!confirm("Remove this user's access?")) return;
+    try {
+      await api.delete(`/documents/${documentId}/access/${userId}`);
+      fetchCollaborators();
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to remove user");
     }
   };
 
@@ -90,35 +100,42 @@ export default function ShareModal({ isOpen, onClose, documentId }) {
             <Shield size={14} /> Who has access
           </h4>
           <div className="max-h-60 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-            {collaborators.length === 0 && (
-              <p className="text-sm text-primary/30 font-medium text-center py-6">
-                No collaborators yet. Invite someone above.
-              </p>
-            )}
             {collaborators.map((collab) => (
               <div
-                key={collab.userId._id}
+                key={collab.user._id}
                 className="flex items-center justify-between p-3 rounded-2xl bg-primary/[0.02] border border-primary/5"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary text-xs font-bold">
-                    {collab.userId.username[0].toUpperCase()}
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold ${collab.isOwner ? 'bg-amber-100 text-amber-600' : 'bg-secondary/10 text-secondary'}`}>
+                    {collab.user.username[0].toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-primary">{collab.userId.username}</p>
-                    <p className="text-[10px] font-medium text-primary/40">{collab.userId.email}</p>
+                    <p className="text-sm font-bold text-primary">{collab.user.username}</p>
+                    <p className="text-[10px] font-medium text-primary/40">{collab.user.email}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={collab.role === "editor" ? "success" : "default"}>
-                    {collab.role}
-                  </Badge>
-                  <button
-                    onClick={() => removePermission(collab.userId._id)}
-                    className="p-1.5 hover:bg-red-50 text-red-300 hover:text-red-500 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {collab.isOwner ? (
+                    <Badge variant="secondary">OWNER</Badge>
+                  ) : (
+                    <>
+                      <select
+                        value={collab.role}
+                        onChange={(e) => updatePermission(collab.user._id, e.target.value)}
+                        className="bg-transparent border-none text-[10px] font-bold text-primary focus:outline-none cursor-pointer hover:underline uppercase"
+                      >
+                        <option value="viewer">Viewer</option>
+                        <option value="editor">Editor</option>
+                      </select>
+                      <button
+                        onClick={() => removePermission(collab.user._id)}
+                        className="p-1.5 hover:bg-red-50 text-red-300 hover:text-red-500 rounded-lg transition-colors"
+                        title="Revoke access"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

@@ -20,10 +20,13 @@ const generateTokens = (user) => {
 exports.signup = async (req, res) => {
   try {
     const { username, email, password } = req.body;
+    console.log(`[AUTH] Signup attempt: ${email} (${username})`);
 
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      const field = existingUser.email === email ? "Email" : "Username";
+      console.log(`[AUTH] Signup failed: ${field} already exists`);
+      return res.status(400).json({ message: `${field} already exists` });
     }
 
     // Hash is handled by model pre-save hook
@@ -32,6 +35,8 @@ exports.signup = async (req, res) => {
 
     user.refreshTokens.push(refreshToken);
     await user.save(); // Single save
+
+    console.log(`[AUTH] Signup success: ${email}`);
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
@@ -45,8 +50,11 @@ exports.signup = async (req, res) => {
       user: { id: user._id, username: user.username, email: user.email },
     });
   } catch (error) {
-    console.error("Signup Error:", error);
-    res.status(500).json({ message: "Error signing up", error: error.message });
+    console.error("[AUTH] Signup Error:", error);
+    res.status(500).json({ 
+      message: "An internal server error occurred during signup", 
+      error: process.env.NODE_ENV === "development" ? error.message : undefined 
+    });
   }
 };
 

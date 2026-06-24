@@ -1,100 +1,286 @@
 const express = require("express");
 const router = express.Router();
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const User = require("../models/User");
 const Document = require("../models/Document");
+const Version = require("../models/Version");
 const authMiddleware = require("../middleware/authMiddleware");
 const { checkDocAccess } = require("../middleware/docAuth");
+const {
+  validate,
+  createDocRules,
+  renameDocRules,
+  inviteRules,
+  permissionRules,
+  shareLinkRules,
+} = require("../middleware/validation");
 
-// 1. Invite a collaborator by email
-router.post("/:id/invite", authMiddleware, checkDocAccess("owner"), async (req, res) => {
-  const { email, role = "editor" } = req.body;
-  const doc = req.doc;
+// ===================================
+// DOCUMENT CRUD
+// ===================================
 
-  try {
-    const collaborator = await User.findOne({ email });
-    if (!collaborator) return res.status(404).json({ message: "User not found" });
+// 1. Create document
+router.post(
+  "/",
+  authMiddleware,
+  createDocRules,
+  validate,
+  async (req, res) => {
+    try {
+      const documentId = crypto.randomBytes(12).toString("hex");
+      const doc = await Document.create({
+        documentId,
+        title: req.body.title || "Untitled Document",
+        content: "",
+        owner: req.user.id,
+      });
 
-    // Check if already a collaborator or owner
-    const isOwner = doc.owner.toString() === collaborator._id.toString();
-    const isAlreadyCollaborator = doc.collaborators.some(
-      (c) => c.user.toString() === collaborator._id.toString()
-    );
+      // Create initial version
+      await Version.create({
+        documentId,
+        versionNumber: 1,
+        content: "",
+        createdBy: req.user.id,
+      });
 
-    if (isOwner || isAlreadyCollaborator) {
-      return res.status(400).json({ message: "User already has access to this document" });
+      res.status(201).json({
+        documentId: doc.documentId,
+        title: doc.title,
+        createdAt: doc.createdAt,
+      });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create document", error: err.message });
     }
+  }
+);
 
-    doc.collaborators.push({ user: collaborator._id, role });
-    await doc.save();
+// 2. List own documents
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    const docs = await Document.find({ owner: req.user.id })
+      .select("documentId title updatedAt createdAt currentVersion")
+      .sort({ updatedAt: -1 })
+      .lean();
 
-    res.json({ message: "Collaborator added successfully", role });
+    res.json(docs);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Failed to fetch documents", error: err.message });
   }
 });
 
-// 2. Generate/Update a shareable link
-router.post("/:id/share-link", authMiddleware, checkDocAccess("owner"), async (req, res) => {
-  const { role = "viewer", expiryHours = 24 } = req.body;
-  const doc = req.doc;
-
+// 3. List shared documents (where user is a collaborator)
+router.get("/shared", authMiddleware, async (req, res) => {
   try {
-    const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + expiryHours);
+    const docs = await Document.find({
+      "collaborators.user": req.user.id,
+    })
+      .select("documentId title updatedAt createdAt currentVersion")
+      .populate("owner", "username email")
+      .sort({ updatedAt: -1 })
+      .lean();
 
-    doc.shareableLinks.push({
-      token,
-      role,
-      expiresAt,
-    });
+    res.json(docs);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch shared documents", error: err.message });
+  }
+});
 
-    await doc.save();
+// 4. Get document details
+router.get("/:id", authMiddleware, checkDocAccess("viewer"), async (req, res) => {
+  try {
+    const doc = await Document.findOne({ documentId: req.params.id })
+      .populate("owner", "username email")
+      .populate("collaborators.user", "username email");
 
     res.json({
-      message: "Shareable link generated",
-      link: `http://localhost:5173/join?token=${token}`,
-      role,
-      expiresAt,
+      documentId: doc.documentId,
+      title: doc.title,
+      owner: doc.owner,
+      collaborators: doc.collaborators,
+      currentVersion: doc.currentVersion,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Failed to fetch document", error: err.message });
   }
 });
 
-// 3. Update collaborator permissions
-router.patch("/:id/permissions", authMiddleware, checkDocAccess("owner"), async (req, res) => {
-  const { userId, role } = req.body;
-  const doc = req.doc;
+// 5. Rename document
+router.patch(
+  "/:id",
+  authMiddleware,
+  checkDocAccess("editor"),
+  renameDocRules,
+  validate,
+  async (req, res) => {
+    try {
+      const doc = await Document.findOneAndUpdate(
+        { documentId: req.params.id },
+        { title: req.body.title },
+        { new: true }
+      );
+      res.json({ documentId: doc.documentId, title: doc.title });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to rename document", error: err.message });
+    }
+  }
+);
 
+// 6. Delete document (owner only)
+router.delete("/:id", authMiddleware, checkDocAccess("owner"), async (req, res) => {
   try {
-    const collaborator = doc.collaborators.find((c) => c.user.toString() === userId);
-    if (!collaborator) return res.status(404).json({ message: "Collaborator not found" });
-
-    collaborator.role = role;
-    await doc.save();
-
-    res.json({ message: "Permissions updated successfully", role });
+    await Document.deleteOne({ documentId: req.params.id });
+    await Version.deleteMany({ documentId: req.params.id });
+    res.json({ message: "Document deleted successfully" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Failed to delete document", error: err.message });
   }
 });
 
-// 4. Transfer Ownership
+// ===================================
+// COLLABORATOR MANAGEMENT
+// ===================================
+
+// 7. Get collaborators list (for ShareModal)
+router.get("/:id/collaborators", authMiddleware, checkDocAccess("viewer"), async (req, res) => {
+  try {
+    const doc = await Document.findOne({ documentId: req.params.id })
+      .populate("collaborators.user", "username email")
+      .populate("owner", "username email");
+
+    const participants = [
+      {
+        user: doc.owner,
+        role: "owner",
+        isOwner: true,
+      },
+      ...doc.collaborators.map((c) => ({
+        user: c.user,
+        role: c.role,
+        isOwner: false,
+      })),
+    ];
+
+    res.json(participants);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch collaborators", error: err.message });
+  }
+});
+
+// 8. Invite a collaborator by email
+router.post(
+  "/:id/invite",
+  authMiddleware,
+  checkDocAccess("owner"),
+  inviteRules,
+  validate,
+  async (req, res) => {
+    const { email, role = "editor" } = req.body;
+    const doc = req.doc;
+
+    try {
+      const collaborator = await User.findOne({ email });
+      if (!collaborator) return res.status(404).json({ message: "User not found" });
+
+      const isOwner = doc.owner.toString() === collaborator._id.toString();
+      const isAlreadyCollaborator = doc.collaborators.some(
+        (c) => c.user.toString() === collaborator._id.toString()
+      );
+
+      if (isOwner || isAlreadyCollaborator) {
+        return res.status(400).json({ message: "User already has access to this document" });
+      }
+
+      doc.collaborators.push({ user: collaborator._id, role });
+      await doc.save();
+
+      res.json({ message: "Collaborator added successfully", role });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// 9. Generate a shareable link
+router.post(
+  "/:id/share-link",
+  authMiddleware,
+  checkDocAccess("owner"),
+  shareLinkRules,
+  validate,
+  async (req, res) => {
+    const { role = "viewer", expiryHours = 24 } = req.body;
+    const doc = req.doc;
+
+    try {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + expiryHours);
+
+      doc.shareableLinks.push({ token, role, expiresAt });
+      await doc.save();
+
+      const baseUrl = process.env.CLIENT_URL || "http://localhost:5173";
+      res.json({
+        message: "Shareable link generated",
+        link: `${baseUrl}/join?token=${token}`,
+        role,
+        expiresAt,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// 10. Update collaborator permissions
+router.patch(
+  "/:id/permissions",
+  authMiddleware,
+  checkDocAccess("owner"),
+  permissionRules,
+  validate,
+  async (req, res) => {
+    const { userId, role } = req.body;
+    const doc = req.doc;
+
+    try {
+      if (userId === doc.owner.toString()) {
+        return res.status(400).json({ message: "Cannot change the primary owner's role directly. Use transfer ownership instead." });
+      }
+
+      const collaborator = doc.collaborators.find(
+        (c) => c.user.toString() === userId
+      );
+      if (!collaborator) return res.status(404).json({ message: "Collaborator not found" });
+
+      collaborator.role = role;
+      await doc.save();
+
+      res.json({ message: "Permissions updated successfully", role });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// 11. Transfer ownership
 router.post("/:id/transfer", authMiddleware, checkDocAccess("owner"), async (req, res) => {
   const { newOwnerId } = req.body;
   const doc = req.doc;
 
   try {
+    if (!mongoose.Types.ObjectId.isValid(newOwnerId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     const newOwner = await User.findById(newOwnerId);
     if (!newOwner) return res.status(404).json({ message: "New owner not found" });
 
-    // Move current owner to collaborators as editor
     doc.collaborators.push({ user: doc.owner, role: "editor" });
     doc.owner = newOwner._id;
-
-    // Remove new owner from collaborators if they were there
     doc.collaborators = doc.collaborators.filter(
       (c) => c.user.toString() !== newOwnerId.toString()
     );
@@ -106,24 +292,39 @@ router.post("/:id/transfer", authMiddleware, checkDocAccess("owner"), async (req
   }
 });
 
-// 5. Revoke access
-router.delete("/:id/access/:userId", authMiddleware, checkDocAccess("owner"), async (req, res) => {
-  const { userId } = req.params;
-  const doc = req.doc;
+// 12. Revoke access
+router.delete(
+  "/:id/access/:userId",
+  authMiddleware,
+  checkDocAccess("owner"),
+  async (req, res) => {
+    const { userId } = req.params;
+    const doc = req.doc;
 
-  try {
-    doc.collaborators = doc.collaborators.filter((c) => c.user.toString() !== userId);
-    await doc.save();
-    res.json({ message: "Access revoked successfully" });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    try {
+      if (userId === doc.owner.toString()) {
+        return res.status(400).json({ message: "Cannot remove the primary owner. Transfer ownership first." });
+      }
+
+      doc.collaborators = doc.collaborators.filter(
+        (c) => c.user.toString() !== userId
+      );
+      await doc.save();
+      res.json({ message: "Access revoked successfully" });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
   }
-});
+);
 
-// 6. Join via Token (Public/Link Join)
+// 13. Join via shareable token
 router.post("/join", authMiddleware, async (req, res) => {
   const { token } = req.body;
-  
+
+  if (!token) {
+    return res.status(400).json({ message: "Token is required" });
+  }
+
   try {
     const doc = await Document.findOne({
       "shareableLinks.token": token,
@@ -139,7 +340,6 @@ router.post("/join", authMiddleware, async (req, res) => {
       return res.status(410).json({ message: "Sharing link has expired" });
     }
 
-    // Add user as collaborator if not already
     const isAlreadyCollaborator = doc.collaborators.some(
       (c) => c.user.toString() === req.user.id
     );
@@ -154,5 +354,96 @@ router.post("/join", authMiddleware, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// ===================================
+// VERSION HISTORY
+// ===================================
+
+// 14. List versions for a document
+router.get("/:id/versions", authMiddleware, checkDocAccess("viewer"), async (req, res) => {
+  try {
+    const versions = await Version.find({ documentId: req.params.id })
+      .select("versionNumber createdBy createdAt")
+      .populate("createdBy", "username")
+      .sort({ versionNumber: -1 })
+      .limit(50)
+      .lean();
+
+    res.json(versions);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch versions", error: err.message });
+  }
+});
+
+// 15. Manually save a version snapshot
+router.post("/:id/versions", authMiddleware, checkDocAccess("editor"), async (req, res) => {
+  try {
+    const doc = await Document.findOne({ documentId: req.params.id });
+    if (!doc) return res.status(404).json({ message: "Document not found" });
+
+    doc.currentVersion += 1;
+    await doc.save();
+
+    const version = await Version.create({
+      documentId: req.params.id,
+      versionNumber: doc.currentVersion,
+      content: doc.content,
+      createdBy: req.user.id,
+    });
+
+    res.status(201).json({
+      versionNumber: version.versionNumber,
+      createdAt: version.createdAt,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to save version", error: err.message });
+  }
+});
+
+// 16. Restore a previous version
+router.post(
+  "/:id/versions/:versionId/restore",
+  authMiddleware,
+  checkDocAccess("editor"),
+  async (req, res) => {
+    try {
+      const version = await Version.findById(req.params.versionId);
+      if (!version || version.documentId !== req.params.id) {
+        return res.status(404).json({ message: "Version not found" });
+      }
+
+      const doc = await Document.findOne({ documentId: req.params.id });
+      // Save current state as a new version before restoring
+      doc.currentVersion += 1;
+      await Version.create({
+        documentId: req.params.id,
+        versionNumber: doc.currentVersion,
+        content: doc.content,
+        createdBy: req.user.id,
+      });
+
+      // Restore
+      doc.content = version.content;
+      doc.currentVersion += 1;
+      await doc.save();
+
+      // Also save the restored content as the latest version
+      await Version.create({
+        documentId: req.params.id,
+        versionNumber: doc.currentVersion,
+        content: version.content,
+        createdBy: req.user.id,
+      });
+
+      res.json({
+        message: "Version restored successfully",
+        versionNumber: doc.currentVersion,
+        content: doc.content,
+      });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to restore version", error: err.message });
+    }
+  }
+);
 
 module.exports = router;
