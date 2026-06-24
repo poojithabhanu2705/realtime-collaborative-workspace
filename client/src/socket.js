@@ -1,13 +1,15 @@
 import { io } from "socket.io-client";
 
-const SERVER_URL =
-  import.meta.env.VITE_SERVER_URL ||
-  "http://localhost:5000";
+console.log("Socket URL:", import.meta.env.VITE_SOCKET_URL);
+
+const SERVER_URL = import.meta.env.VITE_SOCKET_URL;
 
 export const socket = io(SERVER_URL, {
   auth: {
     token: localStorage.getItem("accessToken"),
   },
+  withCredentials: true,
+  transports: ["websocket", "polling"],
   autoConnect: false,
   reconnection: true,
   reconnectionAttempts: 10,
