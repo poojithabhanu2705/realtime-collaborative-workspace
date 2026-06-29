@@ -14,7 +14,7 @@ A scalable real-time collaborative document editor that enables multiple users t
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Frontend
 - React.js, Tailwind CSS, Framer Motion, Socket.IO Client
@@ -48,7 +48,7 @@ A scalable real-time collaborative document editor that enables multiple users t
 
 ---
 
-## 💻 Local Development
+## Local Development
 
 1. **Install Dependencies**:
    ```bash
