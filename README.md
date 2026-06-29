@@ -4,7 +4,7 @@ A scalable real-time collaborative document editor that enables multiple users t
 
 ---
 
-## 🚀 Features
+## Features
 
 - **Real-time Sync**: Collaborative editing powered by Socket.IO and Redis.
 - **RBAC**: Strict Role-Based Access Control (OWNER, EDITOR, VIEWER).
@@ -27,7 +27,7 @@ A scalable real-time collaborative document editor that enables multiple users t
 
 ---
 
-## 📦 Deployment
+## Deployment
 
 ### Backend (Render)
 1. Create a new **Web Service** on Render.
@@ -70,7 +70,7 @@ A scalable real-time collaborative document editor that enables multiple users t
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 The system uses a **REST-first loading strategy** for reliability. 
 1. Client fetches document metadata via REST.
